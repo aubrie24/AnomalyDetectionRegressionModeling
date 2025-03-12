@@ -2327,4 +2327,4 @@ WPATH                     1.500000e+01
 WPOL                      0.000000e+00
 XLogP                    -3.414000e+00
 Zagreb                    2.000000e+01
-Warning: Target column 'SalePrice' is not numeric or missing from data.
+Warning: Target column 'Inhibition' is not numeric or missing from data.

@@ -2333,4 +2333,5 @@ WPATH                    0.000000e+00
 WPOL                     0.000000e+00
 XLogP                   -1.622700e+01
 Zagreb                   0.000000e+00
-Warning: Target column 'SalePrice' is not numeric or missing from data.
+
+No numerical features were found to have a strong correlation with the target.

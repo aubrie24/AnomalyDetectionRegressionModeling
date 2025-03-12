@@ -26,7 +26,7 @@ def load_file(file_path):
         print(f"Error reading {file_path}: {e}")
         return None
 
-def data_leak(data, target_column="SalePrice", corr_limit=0.9, report_file=None):
+def data_leak(data, target_column="Inhibition", corr_limit=0.9, report_file=None):
     with open(report_file, "a") as f:
         # Separate numeric and categorical data
         numeric_data = data.select_dtypes(include=['number'])
