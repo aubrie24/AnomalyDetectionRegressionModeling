@@ -2,22 +2,37 @@ import sys, os
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 
+# Function to convert columns to numeric where possible
+# This will have to be done before any modeling 
+def convert_to_numeric(df):
+    for col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    return df
+
 def load_file(file_path):
-    #load CSV for TXT file
+    # Load CSV or TXT file and clean it
     try:
         if file_path.endswith('.csv'):
-            return pd.read_csv(file_path, header=0)
+            df = pd.read_csv(file_path, header=0, low_memory=False, dtype=str)
         elif file_path.endswith('.txt'):
-            return pd.read_csv(file_path, delimiter='\t', header=0)
+            df = pd.read_csv(file_path, delimiter='\t', header=0)
+        else:
+            return None
+
+        # Clean and convert data to appropriate types
+        return convert_to_numeric(df)
+        
     except Exception as e:
         print(f"Error reading {file_path}: {e}")
         return None
 
 def data_leak(data, target_column="SalePrice", corr_limit=0.9, report_file=None):
     with open(report_file, "a") as f:
+        # Separate numeric and categorical data
         numeric_data = data.select_dtypes(include=['number'])
-        categorical_data = data.select_dtypes(include=['object'])
+        categorical_data = data.select_dtypes(exclude=['number'])
 
+        # Numeric Data Leakage Check
         if target_column in numeric_data.columns:
             correlation_matrix = numeric_data.corr()
             sale_price_corr = correlation_matrix[target_column].abs().sort_values(ascending=False)
@@ -32,23 +47,28 @@ def data_leak(data, target_column="SalePrice", corr_limit=0.9, report_file=None)
         else:
             f.write(f"Warning: Target column '{target_column}' is not numeric or missing from data.\n")
 
+        # Categorical Data Leakage Check
         if not categorical_data.empty:
+            categorical_data = categorical_data.fillna('missing').astype(str)
             encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False, drop="first")
-            encoded_arr = encoder.fit_transform(categorical_data)
-            encoded_df = pd.DataFrame(encoded_arr, columns=encoder.get_feature_names_out(categorical_data.columns))
-            encoded_df[target_column] = data[target_column]
+            try:
+                encoded_arr = encoder.fit_transform(categorical_data)
+                encoded_df = pd.DataFrame(encoded_arr, columns=encoder.get_feature_names_out(categorical_data.columns))
+                encoded_df[target_column] = numeric_data[target_column]
 
-            corr_matrix = encoded_df.corr()
-            target_corr = corr_matrix[target_column].abs().sort_values(ascending=False)
+                corr_matrix = encoded_df.corr()
+                target_corr = corr_matrix[target_column].abs().sort_values(ascending=False)
 
-            categorical_leak = target_corr[target_corr > corr_limit].index.tolist()
-            if target_column in categorical_leak:
-                categorical_leak.remove(target_column)
+                categorical_leak = target_corr[target_corr > corr_limit].index.tolist()
+                if target_column in categorical_leak:
+                    categorical_leak.remove(target_column)
 
-            if categorical_leak:
-                f.write(f"\nThe following categorical (OHE) columns may cause data leakage due to correlation > {corr_limit}:\n {', '.join(categorical_leak)}\n")
-            else:
-                f.write("\nNo categorical features were found to have a strong correlation with the target.\n")
+                if categorical_leak:
+                    f.write(f"\nThe following categorical (OHE) columns may cause data leakage due to correlation > {corr_limit}:\n {', '.join(categorical_leak)}\n")
+                else:
+                    f.write("\nNo categorical features were found to have a strong correlation with the target.\n")
+            except Exception as e:
+                f.write(f"\nError during OneHotEncoding: {e}\n")
 
 def data_shape(data, report_file):
     with open(report_file, "a") as f:
@@ -136,3 +156,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
