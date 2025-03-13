@@ -2,8 +2,8 @@ import sys, os
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 
-# Function to convert columns to numeric where possible
-# This will have to be done before any modeling 
+# function to convert columns to numeric where possible
+# this will have to be done before any modeling 
 def convert_to_numeric(df):
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -89,6 +89,12 @@ def col_missing(data, report_file):
         f.write(f"Columns that have missing values: {missing_cols}\n")
         f.write(f"Number of columns with missing values: {len(missing_cols)}\n")
 
+def missing_values_per_column(data, report_file):
+    with open(report_file, "a") as f:
+        f.write("\nMissing values per column:\n")
+        missing_counts = data.isnull().sum()
+        f.write(f"{missing_counts.to_string()}\n")
+
 def data_type(data, report_file):
     with open(report_file, "a") as f:
         f.write("\nData types of columns:\n")
@@ -128,6 +134,7 @@ def check_quality(file_path, output_dir):
     duplicate_rows(data, output_file)
     rows_missing(data, output_file)
     col_missing(data, output_file)
+    missing_values_per_column(data, output_file)
     data_type(data, output_file)
     data_range(data, output_file)
     unique_values(data, output_file)

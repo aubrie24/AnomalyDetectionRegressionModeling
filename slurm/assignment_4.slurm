@@ -19,4 +19,5 @@ cd /deac/csc/classes/csc373/${USER}/assignment_4/scripts
 
 # Run the program
 # python ... ... ...
-python quality_report.py /deac/csc/classes/csc373/data/assignment_4
+#python quality_report.py /deac/csc/classes/csc373/data/assignment_4
+python assignment_4.py
