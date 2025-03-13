@@ -1,8 +1,10 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error
 import numpy as np
+import joblib
 
 #function to convert columns to numeric where possible
 #this will have to be done before any modeling 
@@ -80,9 +82,37 @@ def baseline_regressor(train_features, train_labels, test_features, test_labels)
     mse_test = mean_squared_error(test_labels, test_predictions) #evaluate MSE for test data
     print(f"Baseline MSE for Train Set: {mse_train}")
     print(f"Baseline MSE for Test Set: {mse_test}")
+    return model, mse_train, mse_test
+
+# Random Forest Regressor
+def random_forest_regressor(train_features, train_labels, test_features, test_labels):
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(train_features, train_labels)
+    train_predictions = model.predict(train_features)
+    test_predictions = model.predict(test_features)
+    mse_train = mean_squared_error(train_labels, train_predictions)
+    mse_test = mean_squared_error(test_labels, test_predictions)
+    print(f"Random Forest MSE for Train Set: {mse_train}")
+    print(f"Random Forest MSE for Test Set: {mse_test}")
+    return model, mse_train, mse_test
+
+# Gradient Boosting Regressor
+def gradient_boosting_regressor(train_features, train_labels, test_features, test_labels):
+    model = GradientBoostingRegressor(n_estimators=100, random_state=42)
+    model.fit(train_features, train_labels)
+    train_predictions = model.predict(train_features)
+    test_predictions = model.predict(test_features)
+    mse_train = mean_squared_error(train_labels, train_predictions)
+    mse_test = mean_squared_error(test_labels, test_predictions)
+    print(f"Gradient Boosting MSE for Train Set: {mse_train}")
+    print(f"Gradient Boosting MSE for Test Set: {mse_test}")
+    return model, mse_train, mse_test
+
 
 def main():
     output_path = "../output/results.txt"
+    model_path = "../output/modeling_pipeline.pkl"
+    predictions_path = "../output/ranked_predictions.csv"
 
     #the published data will be used to train and evaluate the model
     published_data_path = "/deac/csc/classes/csc373/data/assignment_4/published_screen.txt"
@@ -100,7 +130,34 @@ def main():
     test_features, test_labels = extract_features(test_data, "Inhibition")
 
     #train and evaluate baseline regressor 
-    baseline_regressor(train_features, train_labels, test_features, test_labels)
+    bl_regressor, bl_train_mse, bl_test_mse = baseline_regressor(train_features, train_labels, test_features, test_labels)
 
+    #train and evaluate random forest regressor
+    rf_regressor, rf_train_mse, rf_test_mse = random_forest_regressor(train_features, train_labels, test_features, test_labels)
+
+    #train and evaluate gradient boosting regressor
+    gb_regressor, gb_train_mse, gb_test_mse = gradient_boosting_regressor(train_features, train_labels, test_features, test_labels)
+
+    # Save results to CSV
+    with open(output_path, "w") as file:
+        file.write(f"Baseline MSE for Train Set: {bl_train_mse}\n")
+        file.write(f"Baseline MSE for Test Set: {bl_test_mse}\n")
+        file.write(f"Random Forest MSE for Train Set: {rf_train_mse}\n")
+        file.write(f"Random Forest MSE for Test Set: {rf_test_mse}\n")
+        file.write(f"Gradient Boosting MSE for Train Set: {gb_train_mse}\n")
+        file.write(f"Gradient Boosting MSE for Test Set: {gb_test_mse}\n")
+    print("Results saved to results.csv")
+
+
+    if bl_test_mse <= rf_test_mse and bl_test_mse <= gb_test_mse:
+        best_model = bl_regressor
+    elif rf_test_mse <= bl_test_mse and rf_test_mse <= gb_test_mse:
+        best_model = rf_regressor
+    else:
+        best_model = gb_regressor
+
+    joblib.dump(best_model, model_path)
+
+    
 if __name__ == "__main__":
     main()
