@@ -5,7 +5,9 @@ NodeList  = cpu-intel-63
 Resources = cpu=4,mem=16G,node=1,billing=4
 WorkDir   = /deac/csc/classes/csc373/presan24/assignment_4/slurm
 ###########################END-PROLOG#########################
-Remaining NaN values: 0
-Remaining Inf values: 0
-Baseline MSE for Train Set: 0.06564924451710055
-Baseline MSE for Test Set: 0.12303373598483264
+Loading /deac/csc/classes/csc373/software/modulefiles/csc373/python/3.11.8
+  Loading requirement: apps/python/3.11.8
+Feature importance for LinearRegression saved.
+Feature importance for RandomForest saved.
+Feature importance for GradientBoosting saved.
+Model and results saved.

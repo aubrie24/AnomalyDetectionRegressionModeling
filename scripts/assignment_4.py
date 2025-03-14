@@ -5,64 +5,62 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error
 import numpy as np
 import joblib
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer
 
 #function to convert columns to numeric where possible
-#this will have to be done before any modeling 
+#used in pipeline preprocessing
 def convert_to_numeric(df):
-    for col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    return df
+    return df.apply(pd.to_numeric, errors='coerce')
 
-def debug_infinite_values(df):
-    numeric_cols = df.select_dtypes(include=[np.number])
-    for col in numeric_cols.columns:
-        # Count how many inf or -inf in each column
-        inf_count = np.isinf(df[col]).sum()
-        if inf_count > 0:
-            print(f"Column '{col}' has {inf_count} infinite values.")
+#the gmin column kept making the code fail, no matter if values were imputted or clipped
+#name is removed because this is not included in the un published data
+#used in pipeline preprocessing
+def drop_problem_columns(df):
+    return df.drop(columns=['gmin', 'Name'], errors='ignore')
 
 #function to handle missing values
 #according to the quality report, almost all rows have missing values (cannot remove all rows)
 #however, none of the columns have a significantly large portion of NAs (cannot remove valuable columns)
 #so, impute the missing values
 #function written by chat
-def handle_missing_values(data, threshold=0.3, cap_value=1e9):
-    # 1. Drop columns that are entirely NaN
-    data = data.dropna(axis=1, how='all')
 
-    # 2. Drop columns with missing values exceeding the threshold
-    missing_ratio = data.isnull().mean()
-    columns_to_drop = missing_ratio[missing_ratio > threshold].index
-    data = data.drop(columns=columns_to_drop)
+#custom transformer to handle missing values
+#this transformer will drop any columns that has a high percentage of missing values
+class MissingValues(BaseEstimator, TransformerMixin):
+    def __init__(self, threshold=0.3):
+        self.threshold = threshold
+        self.columns_to_drop = []
+    
+    def fit(self, X, y=None):
+        #identify columns to drop based on missing ratio
+        missing_ratio = X.isnull().mean()
+        self.columns_to_drop = missing_ratio[missing_ratio > self.threshold].index.tolist()
+        return self
+    
+    def transform(self, X):
+        #drop the identified columns
+        X = X.drop(columns=self.columns_to_drop, errors='ignore')
+        X = X.fillna(X.mean())
+        return X
+    
+#custom transformer to cap infinite values
+class CapInfiniteValues(BaseEstimator, TransformerMixin):
+    def __init__(self, cap_value=1e9):
+        self.cap_value = cap_value
 
-    # 3. Replace inf and -inf with a large finite cap
-    #    (Alternative: replace them with NaN, then impute)
-    numeric_cols = data.select_dtypes(include=[np.number]).columns
-    for col in numeric_cols:
-        data[col] = data[col].replace(np.inf, cap_value)
-        data[col] = data[col].replace(-np.inf, -cap_value)
-
-    # 4. Impute remaining missing values with column mean
-    data = data.fillna(data.mean())
-
-    # 5. Final safety check: Drop rows that still have NaN
-    #    (in case columns were all inf or still not fixable by imputation)
-    data = data.dropna()
-
-    # Debug prints to confirm no inf or NaN remain
-    print(f"Remaining NaN values: {data.isnull().sum().sum()}")
-    print(f"Remaining Inf values: {np.isinf(data).sum().sum()}")
-    return data
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        numeric_cols = X.select_dtypes(include=[np.number]).columns
+        X[numeric_cols] = X[numeric_cols].replace([np.inf, -np.inf], [self.cap_value, -self.cap_value])
+        return X
 
 #function to load the data from a txt file 
 def load_txt(data_path):
     data = pd.read_csv(data_path, header=0, delimiter='\t')
-    data = convert_to_numeric(data) #change data types to numeric
-    #drop the problematic 'gmin' column (this kept causing modeling to crash even after trying to impute or cap values)
-    if 'gmin' in data.columns:
-        data.drop(columns=['gmin'], inplace=True, errors='ignore')
-    data = handle_missing_values(data) #input any missing values with the mean
-    debug_infinite_values(data) #for debugging 
     return data
 
 #function to seperate features and target variable
@@ -71,47 +69,27 @@ def extract_features(data, label_col):
     features = data.drop(label_col, axis=1)
     return features, labels
 
-#the baseline regressor: linear regression
-#this will not work unless missing values are removed
-def baseline_regressor(train_features, train_labels, test_features, test_labels):
-    model = LinearRegression()
-    model.fit(train_features, train_labels)
-    train_predictions = model.predict(train_features) #predict on the same data that was used to train
-    test_predictions = model.predict(test_features) #predict on data that was not used to train
-    mse_train = mean_squared_error(train_labels, train_predictions) #evaluate MSE for train data
-    mse_test = mean_squared_error(test_labels, test_predictions) #evaluate MSE for test data
-    print(f"Baseline MSE for Train Set: {mse_train}")
-    print(f"Baseline MSE for Test Set: {mse_test}")
-    return model, mse_train, mse_test
+def save_feature_importance(model, feature_names, model_name, importance_path):
+    if hasattr(model, 'coef_'):
+        importance = model.coef_
+    elif hasattr(model, 'feature_importances_'):
+        importance = model.feature_importances_
+    else:
+        print(f"Feature importance not available for {model_name}")
+        return
 
-# Random Forest Regressor
-def random_forest_regressor(train_features, train_labels, test_features, test_labels):
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(train_features, train_labels)
-    train_predictions = model.predict(train_features)
-    test_predictions = model.predict(test_features)
-    mse_train = mean_squared_error(train_labels, train_predictions)
-    mse_test = mean_squared_error(test_labels, test_predictions)
-    print(f"Random Forest MSE for Train Set: {mse_train}")
-    print(f"Random Forest MSE for Test Set: {mse_test}")
-    return model, mse_train, mse_test
+    importance_df = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importance
+    }).sort_values(by='Importance', ascending=False)
 
-# Gradient Boosting Regressor
-def gradient_boosting_regressor(train_features, train_labels, test_features, test_labels):
-    model = GradientBoostingRegressor(n_estimators=100, random_state=42)
-    model.fit(train_features, train_labels)
-    train_predictions = model.predict(train_features)
-    test_predictions = model.predict(test_features)
-    mse_train = mean_squared_error(train_labels, train_predictions)
-    mse_test = mean_squared_error(test_labels, test_predictions)
-    print(f"Gradient Boosting MSE for Train Set: {mse_train}")
-    print(f"Gradient Boosting MSE for Test Set: {mse_test}")
-    return model, mse_train, mse_test
-
+    importance_df.to_csv(f"{importance_path}/{model_name}_feature_importance.csv", index=False)
+    print(f"Feature importance for {model_name} saved.")
 
 def main():
     output_path = "../output/results.txt"
     model_path = "../output/modeling_pipeline.pkl"
+    importance_path = "../output"
     predictions_path = "../output/ranked_predictions.csv"
 
     #the published data will be used to train and evaluate the model
@@ -129,35 +107,52 @@ def main():
     train_features, train_labels  = extract_features(train_data, "Inhibition")
     test_features, test_labels = extract_features(test_data, "Inhibition")
 
-    #train and evaluate baseline regressor 
-    bl_regressor, bl_train_mse, bl_test_mse = baseline_regressor(train_features, train_labels, test_features, test_labels)
+    #preprocessing steps
+    preprocessing_pipeline = Pipeline(steps=[
+        ('drop_problem_columns', FunctionTransformer(drop_problem_columns)),
+        ('convert_numeric', FunctionTransformer(convert_to_numeric)),
+        ('handle_missing', MissingValues()),
+        ('cap_infinite', CapInfiniteValues())
 
-    #train and evaluate random forest regressor
-    rf_regressor, rf_train_mse, rf_test_mse = random_forest_regressor(train_features, train_labels, test_features, test_labels)
+    ])
 
-    #train and evaluate gradient boosting regressor
-    gb_regressor, gb_train_mse, gb_test_mse = gradient_boosting_regressor(train_features, train_labels, test_features, test_labels)
+    models = {
+        "LinearRegression": LinearRegression(), #baseline
+        "RandomForest": RandomForestRegressor(n_estimators=100, random_state=42),
+        "GradientBoosting": GradientBoostingRegressor(n_estimators=100, random_state=42)
+    }
 
-    # Save results to CSV
+    best_model = None
+    best_mse = float('inf')
+
     with open(output_path, "w") as file:
-        file.write(f"Baseline MSE for Train Set: {bl_train_mse}\n")
-        file.write(f"Baseline MSE for Test Set: {bl_test_mse}\n")
-        file.write(f"Random Forest MSE for Train Set: {rf_train_mse}\n")
-        file.write(f"Random Forest MSE for Test Set: {rf_test_mse}\n")
-        file.write(f"Gradient Boosting MSE for Train Set: {gb_train_mse}\n")
-        file.write(f"Gradient Boosting MSE for Test Set: {gb_test_mse}\n")
-    print("Results saved to results.csv")
+        for name, model in models.items():
+            pipeline = Pipeline(steps=[
+                ('preprocessing', preprocessing_pipeline),
+                ('regressor', model)
+            ])
+
+            pipeline.fit(train_features, train_labels)
+            train_preds = pipeline.predict(train_features)
+            test_preds = pipeline.predict(test_features)
+
+            mse_train = mean_squared_error(train_labels, train_preds)
+            mse_test = mean_squared_error(test_labels, test_preds)
+
+            file.write(f"{name} MSE for Train Set: {mse_train}\n")
+            file.write(f"{name} MSE for Test set:{mse_test}\n")
+
+            # Extract processed feature names after preprocessing
+            processed_features = preprocessing_pipeline.fit(train_features).transform(train_features).columns
+            save_feature_importance(model, processed_features, name, importance_path)
 
 
-    if bl_test_mse <= rf_test_mse and bl_test_mse <= gb_test_mse:
-        best_model = bl_regressor
-    elif rf_test_mse <= bl_test_mse and rf_test_mse <= gb_test_mse:
-        best_model = rf_regressor
-    else:
-        best_model = gb_regressor
+            if mse_test < best_mse:
+                best_mse = mse_test
+                best_model = pipeline
+            
+        joblib.dump(best_model, model_path)
+        print("Model and results saved.")
 
-    joblib.dump(best_model, model_path)
-
-    
 if __name__ == "__main__":
     main()
