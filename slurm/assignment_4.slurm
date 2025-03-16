@@ -21,3 +21,4 @@ cd /deac/csc/classes/csc373/${USER}/assignment_4/scripts
 # python ... ... ...
 #python quality_report.py /deac/csc/classes/csc373/data/assignment_4
 python assignment_4.py
+#python plot_correlations.py

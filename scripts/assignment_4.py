@@ -20,12 +20,6 @@ def convert_to_numeric(df):
 def drop_problem_columns(df):
     return df.drop(columns=['gmin', 'Name'], errors='ignore')
 
-#function to handle missing values
-#according to the quality report, almost all rows have missing values (cannot remove all rows)
-#however, none of the columns have a significantly large portion of NAs (cannot remove valuable columns)
-#so, impute the missing values
-#function written by chat
-
 #custom transformer to handle missing values
 #this transformer will drop any columns that has a high percentage of missing values
 class MissingValues(BaseEstimator, TransformerMixin):
@@ -69,6 +63,7 @@ def extract_features(data, label_col):
     features = data.drop(label_col, axis=1)
     return features, labels
 
+#function to analyze which features has the highest coefficients for the models
 def save_feature_importance(model, feature_names, model_name, importance_path):
     if hasattr(model, 'coef_'):
         importance = model.coef_

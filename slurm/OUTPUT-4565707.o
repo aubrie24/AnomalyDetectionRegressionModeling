@@ -1,0 +1,8 @@
+#########################BEGIN-PROLOG#########################
+JobName   = csc373-DM
+Account   = csc373
+NodeList  = cpu-intel-63
+Resources = cpu=4,mem=16G,node=1,billing=4
+WorkDir   = /deac/csc/classes/csc373/presan24/assignment_4/slurm
+###########################END-PROLOG#########################
+Plot saved to ../output/correlation_heatmap.png
