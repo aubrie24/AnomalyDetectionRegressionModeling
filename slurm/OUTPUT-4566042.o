@@ -5,7 +5,11 @@ NodeList  = cpu-intel-63
 Resources = cpu=4,mem=16G,node=1,billing=4
 WorkDir   = /deac/csc/classes/csc373/presan24/assignment_4/slurm
 ###########################END-PROLOG#########################
+Loading /deac/csc/classes/csc373/software/modulefiles/csc373/python/3.11.8
+  Loading requirement: apps/python/3.11.8
 Feature importance for LinearRegression saved.
 Feature importance for RandomForest saved.
 Feature importance for GradientBoosting saved.
 Model and results saved.
+Loaded trained model successfully.
+Predictions saved to ../output/ranked_predictions.csv

@@ -80,7 +80,7 @@ def load_txt(data_path):
 # Function to separate features and target variable
 def extract_features(data, label_col):
     labels = data[label_col]
-    features = data.drop(label_col, axis=1)
+    features = data.drop([label_col, 'CID'], axis=1, errors='ignore')
     return features, labels
 
 # Function to analyze which features have the highest coefficients for the models
@@ -189,14 +189,15 @@ def test_on_unseen_data():
 
     # Load new data
     new_data = pd.read_csv(new_molecules_path)
-    new_features = new_data.drop(columns=['id'], errors='ignore')
+    new_data.rename(columns={'id': 'CID'}, inplace=True) #rename id to CID, because its called CID in the published data
+    new_features = new_data.drop(columns=['CID'], errors='ignore') #do not include the CID in training 
 
     # Make predictions using the full pipeline
     predictions = model.predict(new_features)
 
     # Save ranked predictions
     ranked_predictions = pd.DataFrame({
-        'id': new_data['id'],
+        'CID': new_data['CID'],
         'predicted_score': predictions
     }).sort_values(by='predicted_score', ascending=False)
 
