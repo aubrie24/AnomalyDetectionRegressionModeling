@@ -106,13 +106,14 @@ def detect_and_log_anomalies(features, cids, output_path, contamination=0.05):
     anomaly_report.to_csv(output_path, index=False)
     print(f"Anomalies logged to {output_path}")
 
-# Main function
+# Function to determine the best model based on the published data set
+# Function to train and save the pipeline
 def main():
-    output_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/results.txt"
-    model_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/modeling_pipeline.pkl"
-    importance_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output"
-    predictions_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/ranked_predictions.csv"
-    quality_report_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/quality_report.csv"
+    output_path = "../output/results.txt"
+    model_path = "../output/modeling_pipeline.pkl"
+    importance_path = "../output"
+    predictions_path = "../output/ranked_predictions.csv"
+    quality_report_path = "../output/quality_report.csv"
 
     # The published data will be used to train and evaluate the model
     published_data_path = "/deac/csc/classes/csc373/data/assignment_4/published_screen.txt"
@@ -120,6 +121,7 @@ def main():
     # Load the published dataset
     published_data = load_txt(published_data_path)
 
+    ## Find the best model ##
     # Split the published dataset into train and dev
     train_data, test_data = train_test_split(published_data, test_size=0.2, random_state=42)
 
@@ -175,15 +177,28 @@ def main():
                 best_mse = mse_test
                 best_model = pipeline
     
-        joblib.dump(best_model, model_path)
-        print("Model and results saved.")
+    ## Retrain data with the entire published dataset and the best model ##
+    full_features, full_labels = extract_features(published_data, "Inhibition")
+
+    # Create a new pipeline with the final model
+    final_model = Pipeline(steps=[
+        ('preprocessing', preprocessing_pipeline),
+        ('regressor', best_model)  # Use the best regressor
+    ])
+
+    final_model.fit(full_features, full_labels)
+
+    # Save only the final model
+    joblib.dump(final_model, model_path)
+    print("Final model trained on full dataset and saved.")
+
 
 # Function to test the trained model on unseen data
 # Function to test trained model on new molecules
 def test_on_unseen_data():
-    model_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/modeling_pipeline.pkl"
+    model_path = "../output/modeling_pipeline.pkl"
     new_molecules_path = "/deac/csc/classes/csc373/data/assignment_4/new_molecules.csv"
-    predictions_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/ranked_predictions.csv"
+    predictions_path = "../output/ranked_predictions.csv"
 
     model = joblib.load(model_path)
     new_data = pd.read_csv(new_molecules_path)
@@ -200,8 +215,6 @@ def test_on_unseen_data():
         .to_csv(predictions_path, index=False)
 
     print(f"Predictions saved to {predictions_path}")
-
-
 
 def feature_difference(ranked_path, features_path, model_path, output_path):
     # Load ranked predictions
@@ -261,10 +274,10 @@ if __name__ == "__main__":
     test_on_unseen_data()
 
     # Define file paths
-    predictions_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/ranked_predictions.csv"
+    predictions_path = "../output/ranked_predictions.csv"
     features_path = "/deac/csc/classes/csc373/data/assignment_4/new_molecules.csv"
-    model_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/modeling_pipeline.pkl"
-    output_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output"
+    model_path = "../output/modeling_pipeline.pkl"
+    output_path = "../output"
 
     # Run feature analysis with full preprocessing
     feature_difference(predictions_path, features_path, model_path, output_path)
