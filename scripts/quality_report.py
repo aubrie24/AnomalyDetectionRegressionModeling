@@ -2,6 +2,8 @@ import sys, os
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 
+#Authors: Aubrie Pressley & Lisette Kamper Hinson
+
 # function to convert columns to numeric where possible
 # this will have to be done before any modeling 
 def convert_to_numeric(df):

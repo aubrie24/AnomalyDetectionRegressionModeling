@@ -10,6 +10,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 import scipy.stats as stats
 
+#Authors: Aubrie Pressley & Lisette Kamper-Hinson
+
 # Function to convert columns to numeric where possible
 # Used in pipeline preprocessing
 def convert_to_numeric(df):
@@ -192,8 +194,6 @@ def main():
     joblib.dump(final_model, model_path)
     print("Final model trained on full dataset and saved.")
 
-
-# Function to test the trained model on unseen data
 # Function to test trained model on new molecules
 def test_on_unseen_data():
     model_path = "../output/modeling_pipeline.pkl"
@@ -208,6 +208,7 @@ def test_on_unseen_data():
     preprocessing_pipeline = model.named_steps['preprocessing']
     processed_features = preprocessing_pipeline.transform(new_data.drop(columns=['CID'], errors='ignore'))
 
+    # Predict on the new data using the trained pipeline
     predictions = model.predict(processed_features)
 
     pd.DataFrame({'CID': new_data['CID'], 'predicted_score': predictions}) \
@@ -216,6 +217,7 @@ def test_on_unseen_data():
 
     print(f"Predictions saved to {predictions_path}")
 
+# Function to find which features, if any, differ significantly among the top and bottom ranked molecules.
 def feature_difference(ranked_path, features_path, model_path, output_path):
     # Load ranked predictions
     ranked_predictions = pd.read_csv(ranked_path)
