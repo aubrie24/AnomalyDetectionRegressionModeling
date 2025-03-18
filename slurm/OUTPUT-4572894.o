@@ -9,5 +9,5 @@ Loading /deac/csc/classes/csc373/software/modulefiles/csc373/python/3.11.8
   Loading requirement: apps/python/3.11.8
 Anomalies logged to ../output/quality_report.csv
 Final model trained on full dataset and saved.
-Predictions saved to ../output/ranked_predictions.csv
+Predictions saved to ../output/ranked_predictions.csv, with anomalies marked as NaN.
 Significant feature analysis complete. Results saved to '../output/significant_features.csv'.

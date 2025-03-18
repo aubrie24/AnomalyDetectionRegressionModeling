@@ -108,6 +108,20 @@ def detect_and_log_anomalies(features, cids, output_path, contamination=0.05):
     anomaly_report.to_csv(output_path, index=False)
     print(f"Anomalies logged to {output_path}")
 
+# Function to detect anomalies and save them in a data frame
+def detect_anomalies(features, cids, contamination=0.05):
+    # Fit Isolation Forest
+    iforest = IsolationForest(contamination=contamination, random_state=42)
+    anomaly_predictions = iforest.fit(features).predict(features)  # Use .predict for binary classification
+    
+    # Identify anomalies (predictions of -1 indicate anomalies)
+    anomaly_mask = anomaly_predictions == -1
+
+    # Create a DataFrame with CID and anomaly status
+    anomaly_df = pd.DataFrame({'CID': cids[anomaly_mask]})
+    
+    return anomaly_df
+
 # Function to determine the best model based on the published data set
 # Function to train and save the pipeline
 def main():
@@ -208,14 +222,22 @@ def test_on_unseen_data():
     preprocessing_pipeline = model.named_steps['preprocessing']
     processed_features = preprocessing_pipeline.transform(new_data.drop(columns=['CID'], errors='ignore'))
 
+    # Identify which molecules are anomalies and store their CID a dataframe
+    anomalies_df = detect_anomalies(processed_features, new_data['CID'].values)
+
     # Predict on the new data using the trained pipeline
     predictions = model.predict(processed_features)
 
-    pd.DataFrame({'CID': new_data['CID'], 'predicted_score': predictions}) \
-        .sort_values(by='predicted_score', ascending=False) \
-        .to_csv(predictions_path, index=False)
+    # Create a DataFrame with results
+    results_df = pd.DataFrame({'CID': new_data['CID'], 'predicted_score': predictions})
 
-    print(f"Predictions saved to {predictions_path}")
+    # Mark anomalies with NaN to avoid type errors
+    results_df.loc[results_df['CID'].isin(anomalies_df['CID']), 'predicted_score'] = np.nan
+
+    # Sort with NaN last and save
+    results_df.sort_values(by='predicted_score', ascending=False, na_position='last').to_csv(predictions_path, index=False)
+
+    print(f"Predictions saved to {predictions_path}, with anomalies marked as NaN.")
 
 # Function to find which features, if any, differ significantly among the top and bottom ranked molecules.
 def feature_difference(ranked_path, features_path, model_path, output_path):
@@ -242,7 +264,10 @@ def feature_difference(ranked_path, features_path, model_path, output_path):
     processed_df['CID'] = merged_df['CID'].values
     processed_df['predicted_score'] = merged_df['predicted_score'].values
 
-    # Select top 100 and bottom 100 ranked molecules after preprocessing
+    # Exclude NaN predictions (anomalous molecules)
+    processed_df = processed_df.dropna(subset=['predicted_score'])
+
+    # Select top 100 and bottom 100 ranked molecules (excluding NaN anomalies)
     top_molecules = processed_df.nlargest(100, 'predicted_score')
     bottom_molecules = processed_df.nsmallest(100, 'predicted_score')
 
@@ -272,8 +297,8 @@ def feature_difference(ranked_path, features_path, model_path, output_path):
     print(f"Significant feature analysis complete. Results saved to '{output_path}/significant_features.csv'.")
 
 if __name__ == "__main__":
-    main()
-    test_on_unseen_data()
+    main() # Script to train the pipeline
+    test_on_unseen_data() # Script to make predictions using new data
 
     # Define file paths
     predictions_path = "../output/ranked_predictions.csv"
