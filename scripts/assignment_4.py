@@ -8,6 +8,7 @@ import joblib
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
+import scipy.stats as stats
 
 # Function to convert columns to numeric where possible
 # Used in pipeline preprocessing
@@ -83,29 +84,6 @@ def extract_features(data, label_col):
     features = data.drop([label_col, 'CID'], axis=1, errors='ignore')
     return features, labels
 
-# Function to analyze which features have the highest coefficients for the models
-def save_feature_importance(model, feature_names, model_name, importance_path):
-    if hasattr(model, 'coef_'):
-        importance = model.coef_
-    elif hasattr(model, 'feature_importances_'):
-        importance = model.feature_importances_
-    else:
-        print(f"Feature importance not available for {model_name}")
-        return
-
-    # Ensure feature names and importance arrays are the same length
-    if len(feature_names) != len(importance):
-        print(f"Warning: Mismatch in feature name count and importance length for {model_name}. Skipping saving importance.")
-        return
-    
-    importance_df = pd.DataFrame({
-        'Feature': feature_names,
-        'Importance': importance
-    }).sort_values(by='Importance', ascending=False)
-    
-    importance_df.to_csv(f"{importance_path}/{model_name}_feature_importance.csv", index=False)
-    print(f"Feature importance for {model_name} saved.")
-
 # Main function
 def main():
     output_path = "../output/results.txt"
@@ -161,15 +139,6 @@ def main():
             file.write(f"{name} MSE for Train Set: {mse_train}\n")
             file.write(f"{name} MSE for Test Set: {mse_test}\n")
 
-            # Extract processed feature names after preprocessing
-            train_features_transformed = preprocessing_pipeline.transform(train_features)
-            if isinstance(train_features_transformed, pd.DataFrame):
-                processed_features = train_features_transformed.columns.tolist()
-            else:
-                processed_features = [f"feature_{i}" for i in range(train_features_transformed.shape[1])]
-
-            save_feature_importance(model, processed_features, name, importance_path)
-
             if mse_test < best_mse:
                 best_mse = mse_test
                 best_model = pipeline
@@ -178,32 +147,91 @@ def main():
         print("Model and results saved.")
 
 # Function to test the trained model on unseen data
+# Function to test trained model on new molecules
 def test_on_unseen_data():
     model_path = "../output/modeling_pipeline.pkl"
     new_molecules_path = "/deac/csc/classes/csc373/data/assignment_4/new_molecules.csv"
     predictions_path = "../output/ranked_predictions.csv"
 
-    # Load trained model
     model = joblib.load(model_path)
-    print("Loaded trained model successfully.")
-
-    # Load new data
     new_data = pd.read_csv(new_molecules_path)
-    new_data.rename(columns={'id': 'CID'}, inplace=True) #rename id to CID, because its called CID in the published data
-    new_features = new_data.drop(columns=['CID'], errors='ignore') #do not include the CID in training 
+    new_data.rename(columns={'id': 'CID'}, inplace=True)
 
-    # Make predictions using the full pipeline
-    predictions = model.predict(new_features)
+    # Apply the preprocessing pipeline to new data
+    preprocessing_pipeline = model.named_steps['preprocessing']
+    processed_features = preprocessing_pipeline.transform(new_data.drop(columns=['CID'], errors='ignore'))
 
-    # Save ranked predictions
-    ranked_predictions = pd.DataFrame({
-        'CID': new_data['CID'],
-        'predicted_score': predictions
-    }).sort_values(by='predicted_score', ascending=False)
+    predictions = model.predict(processed_features)
 
-    ranked_predictions.to_csv(predictions_path, index=False)
+    pd.DataFrame({'CID': new_data['CID'], 'predicted_score': predictions}) \
+        .sort_values(by='predicted_score', ascending=False) \
+        .to_csv(predictions_path, index=False)
+
     print(f"Predictions saved to {predictions_path}")
+
+def feature_difference(ranked_path, features_path, model_path, output_path):
+    # Load ranked predictions
+    ranked_predictions = pd.read_csv(ranked_path)
+    
+    # Load new molecule feature data
+    features_df = pd.read_csv(features_path)
+    features_df.rename(columns={'id': 'CID'}, inplace=True)
+
+    # Merge predictions with original feature data
+    merged_df = ranked_predictions.merge(features_df, on='CID')
+
+    # Load the trained model and extract the preprocessing pipeline
+    model = joblib.load(model_path)
+    preprocessing_pipeline = model.named_steps['preprocessing']
+
+    # Extract features and apply full preprocessing
+    feature_data = merged_df.drop(columns=['CID', 'predicted_score'], errors='ignore')
+    processed_features = preprocessing_pipeline.transform(feature_data)
+
+    # Convert processed features back to a DataFrame
+    processed_df = pd.DataFrame(processed_features, columns=feature_data.columns)
+    processed_df['CID'] = merged_df['CID'].values
+    processed_df['predicted_score'] = merged_df['predicted_score'].values
+
+    # Select top 100 and bottom 100 ranked molecules after preprocessing
+    top_molecules = processed_df.nlargest(100, 'predicted_score')
+    bottom_molecules = processed_df.nsmallest(100, 'predicted_score')
+
+    # Drop non-feature columns (CID, predicted_score)
+    feature_columns = [col for col in processed_df.columns if col not in ['CID', 'predicted_score']]
+
+    # Store significant features
+    significant_features = []
+
+    # Perform statistical tests on cleaned and processed data
+    for feature in feature_columns:
+        top_values = top_molecules[feature].dropna()
+        bottom_values = bottom_molecules[feature].dropna()
+
+        if len(top_values) > 1 and len(bottom_values) > 1:
+            try:
+                t_stat, p_value = stats.ttest_ind(top_values, bottom_values, equal_var=False)
+                if p_value < 0.05:
+                    significant_features.append((feature, p_value))
+            except Exception as e:
+                print(f"Skipping feature {feature} due to error: {e}")
+
+    # Convert results to DataFrame and save
+    significant_df = pd.DataFrame(significant_features, columns=['Feature', 'p_value']).sort_values(by='p_value')
+    significant_df.to_csv(f"{output_path}/significant_features.csv", index=False)
+    
+    print(f"Significant feature analysis complete. Results saved to '{output_path}/significant_features.csv'.")
 
 if __name__ == "__main__":
     main()
     test_on_unseen_data()
+
+    # Define file paths
+    predictions_path = "../output/ranked_predictions.csv"
+    features_path = "/deac/csc/classes/csc373/data/assignment_4/new_molecules.csv"
+    model_path = "../output/modeling_pipeline.pkl"
+    output_path = "../output"
+
+    # Run feature analysis with full preprocessing
+    feature_difference(predictions_path, features_path, model_path, output_path)
+
