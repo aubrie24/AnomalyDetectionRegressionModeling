@@ -52,26 +52,29 @@ class CapInfiniteValues(BaseEstimator, TransformerMixin):
         numeric_cols = X.select_dtypes(include=[np.number]).columns
         X[numeric_cols] = X[numeric_cols].replace([np.inf, -np.inf], [self.cap_value, -self.cap_value])
         return X
-
+'''
 # Custom transformer for anomaly detection
 # Using Isolation Forest because it detects anomalies using random decision trees, which we learned about in class
 class IsolationForestTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, contamination=0.05):
         self.contamination = contamination
         self.iforest = IsolationForest(contamination=self.contamination, random_state=42)
+        self.anomaly_mask = None
     
     def fit(self, X, y=None):
         self.iforest.fit(X)
         return self
     
     def transform(self, X):
-        anomaly_scores = self.iforest.decision_function(X)
-
-        # Avoid modifying the original dataset
-        X = X.copy()
-
-        # Ensure consistency without adding 'anomaly_score' to avoid mismatches during inference
-        return X
+        # Predict anomalies
+        anomaly_predictions = self.iforest.predict(X)
+        
+        # Create a mask for non-anomalies (1 for inliers, -1 for outliers)
+        self.anomaly_mask = anomaly_predictions == 1
+        
+        # Return only the inliers
+        return X[self.anomaly_mask]
+'''
 
 # Function to load data from a text file
 def load_txt(data_path):
@@ -84,12 +87,32 @@ def extract_features(data, label_col):
     features = data.drop([label_col, 'CID'], axis=1, errors='ignore')
     return features, labels
 
+# Function to detect anomalies and log them to a file
+def detect_and_log_anomalies(features, cids, output_path, contamination=0.05):
+    # Fit Isolation Forest
+    iforest = IsolationForest(contamination=contamination, random_state=42)
+    anomaly_predictions = iforest.fit(features).predict(features)  # Use .predict for binary classification
+    
+    # Identify anomalies (predictions of -1 indicate anomalies)
+    anomaly_mask = anomaly_predictions == -1
+    
+    # Create a DataFrame with CID and anomaly scores
+    anomaly_report = pd.DataFrame({
+        'CID': cids[anomaly_mask],
+        'Anomaly_Score': anomaly_predictions[anomaly_mask]  # Use predictions for clarity
+    }).sort_values(by='Anomaly_Score', ascending=True)
+    
+    # Save the report to a file
+    anomaly_report.to_csv(output_path, index=False)
+    print(f"Anomalies logged to {output_path}")
+
 # Main function
 def main():
-    output_path = "../output/results.txt"
-    model_path = "../output/modeling_pipeline.pkl"
-    importance_path = "../output"
-    predictions_path = "../output/ranked_predictions.csv"
+    output_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/results.txt"
+    model_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/modeling_pipeline.pkl"
+    importance_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output"
+    predictions_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/ranked_predictions.csv"
+    quality_report_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/quality_report.csv"
 
     # The published data will be used to train and evaluate the model
     published_data_path = "/deac/csc/classes/csc373/data/assignment_4/published_screen.txt"
@@ -109,9 +132,18 @@ def main():
         ('drop_problem_columns', FunctionTransformer(drop_problem_columns)),
         ('convert_numeric', FunctionTransformer(convert_to_numeric)),
         ('handle_missing', MissingValues()),
-        ('cap_infinite', CapInfiniteValues()),
-        ('anomaly_detection', IsolationForestTransformer())
+        ('cap_infinite', CapInfiniteValues())
     ])
+
+    train_features_transformed = preprocessing_pipeline.fit_transform(train_features)
+    test_features_transformed = preprocessing_pipeline.transform(test_features)
+
+    # Detect and log anomalies in the training data
+    detect_and_log_anomalies(
+        train_features_transformed,
+        train_data['CID'].values,
+        quality_report_path
+    )
 
     models = {
         "LinearRegression": LinearRegression(),  # Baseline
@@ -149,9 +181,9 @@ def main():
 # Function to test the trained model on unseen data
 # Function to test trained model on new molecules
 def test_on_unseen_data():
-    model_path = "../output/modeling_pipeline.pkl"
+    model_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/modeling_pipeline.pkl"
     new_molecules_path = "/deac/csc/classes/csc373/data/assignment_4/new_molecules.csv"
-    predictions_path = "../output/ranked_predictions.csv"
+    predictions_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/ranked_predictions.csv"
 
     model = joblib.load(model_path)
     new_data = pd.read_csv(new_molecules_path)
@@ -168,6 +200,8 @@ def test_on_unseen_data():
         .to_csv(predictions_path, index=False)
 
     print(f"Predictions saved to {predictions_path}")
+
+
 
 def feature_difference(ranked_path, features_path, model_path, output_path):
     # Load ranked predictions
@@ -227,11 +261,10 @@ if __name__ == "__main__":
     test_on_unseen_data()
 
     # Define file paths
-    predictions_path = "../output/ranked_predictions.csv"
+    predictions_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/ranked_predictions.csv"
     features_path = "/deac/csc/classes/csc373/data/assignment_4/new_molecules.csv"
-    model_path = "../output/modeling_pipeline.pkl"
-    output_path = "../output"
+    model_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output/modeling_pipeline.pkl"
+    output_path = "/deac/csc/classes/csc373/kamplm24/assignment_4/output"
 
     # Run feature analysis with full preprocessing
     feature_difference(predictions_path, features_path, model_path, output_path)
-
