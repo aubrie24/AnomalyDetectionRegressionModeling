@@ -10,8 +10,6 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 import scipy.stats as stats
 
-#Authors: Aubrie Pressley & Lisette Kamper-Hinson
-
 # Function to convert columns to numeric where possible
 # Used in pipeline preprocessing
 def convert_to_numeric(df):
@@ -54,19 +52,22 @@ class CapInfiniteValues(BaseEstimator, TransformerMixin):
         numeric_cols = X.select_dtypes(include=[np.number]).columns
         X[numeric_cols] = X[numeric_cols].replace([np.inf, -np.inf], [self.cap_value, -self.cap_value])
         return X
-'''
+
 # Custom transformer for anomaly detection
 # Using Isolation Forest because it detects anomalies using random decision trees, which we learned about in class
 class IsolationForestTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, contamination=0.05):
+    def __init__(self, contamination=0.05, random_state=42):
         self.contamination = contamination
-        self.iforest = IsolationForest(contamination=self.contamination, random_state=42)
+        self.random_state = random_state
+        self.iforest = IsolationForest(contamination=self.contamination, random_state=self.random_state)
         self.anomaly_mask = None
-    
+        self.retained_indices = None  # Store indices of retained samples
+
     def fit(self, X, y=None):
+        # Fit the Isolation Forest model
         self.iforest.fit(X)
         return self
-    
+
     def transform(self, X):
         # Predict anomalies
         anomaly_predictions = self.iforest.predict(X)
@@ -74,9 +75,15 @@ class IsolationForestTransformer(BaseEstimator, TransformerMixin):
         # Create a mask for non-anomalies (1 for inliers, -1 for outliers)
         self.anomaly_mask = anomaly_predictions == 1
         
+        # Store the indices of retained samples
+        self.retained_indices = np.where(self.anomaly_mask)[0]
+        
         # Return only the inliers
         return X[self.anomaly_mask]
-'''
+
+    def get_retained_indices(self):
+        # Return the indices of retained samples
+        return self.retained_indices
 
 # Function to load data from a text file
 def load_txt(data_path):
@@ -122,14 +129,13 @@ def detect_anomalies(features, cids, contamination=0.05):
     
     return anomaly_df
 
-# Function to determine the best model based on the published data set
-# Function to train and save the pipeline
+# Main function
 def main():
     output_path = "../output/results.txt"
     model_path = "../output/modeling_pipeline.pkl"
     importance_path = "../output"
     predictions_path = "../output/ranked_predictions.csv"
-    quality_report_path = "../output/quality_report.csv"
+    anomaly_report_path = "../output/anomaly_report.csv"
 
     # The published data will be used to train and evaluate the model
     published_data_path = "/deac/csc/classes/csc373/data/assignment_4/published_screen.txt"
@@ -137,7 +143,6 @@ def main():
     # Load the published dataset
     published_data = load_txt(published_data_path)
 
-    ## Find the best model ##
     # Split the published dataset into train and dev
     train_data, test_data = train_test_split(published_data, test_size=0.2, random_state=42)
 
@@ -145,23 +150,48 @@ def main():
     train_features, train_labels = extract_features(train_data, "Inhibition")
     test_features, test_labels = extract_features(test_data, "Inhibition")
 
-    # Preprocessing steps
+    # Preprocessing steps for reporting
     preprocessing_pipeline = Pipeline(steps=[
         ('drop_problem_columns', FunctionTransformer(drop_problem_columns)),
         ('convert_numeric', FunctionTransformer(convert_to_numeric)),
         ('handle_missing', MissingValues()),
-        ('cap_infinite', CapInfiniteValues())
+        ('cap_infinite', CapInfiniteValues()),
     ])
 
-    train_features_transformed = preprocessing_pipeline.fit_transform(train_features)
-    test_features_transformed = preprocessing_pipeline.transform(test_features)
+    train_features_transformed_reporting = preprocessing_pipeline.fit_transform(train_features)
+    test_features_transformed_reporting = preprocessing_pipeline.transform(test_features)
 
     # Detect and log anomalies in the training data
     detect_and_log_anomalies(
-        train_features_transformed,
+        train_features_transformed_reporting,
         train_data['CID'].values,
-        quality_report_path
+        anomaly_report_path
     )
+
+    # Preprocessing steps with anomaly detection
+    preprocessing_pipeline_anomaly = Pipeline(steps=[
+        ('drop_problem_columns', FunctionTransformer(drop_problem_columns)),
+        ('convert_numeric', FunctionTransformer(convert_to_numeric)),
+        ('handle_missing', MissingValues()),
+        ('cap_infinite', CapInfiniteValues()),
+        ('anomaly_detection', IsolationForestTransformer(contamination=0.05, random_state=42))
+    ])
+
+    # Fit and transform the training data
+    train_features_transformed = preprocessing_pipeline_anomaly.fit_transform(train_features)
+
+    print(f"Shape of train_features_transformed: {train_features_transformed.shape}")
+    
+
+    # Access the anomaly_mask from the IsolationForestTransformer
+    retained_indices = preprocessing_pipeline_anomaly.named_steps['anomaly_detection'].get_retained_indices()
+
+    # Filter the labels to match the retained samples
+    train_labels_cleaned = train_labels.iloc[retained_indices].reset_index(drop=True)
+
+    print(f"Shape of train_labels_cleaned: {train_labels_cleaned.shape}")
+    # Transform the test data using the same pipeline
+    test_features_transformed = preprocessing_pipeline.transform(test_features)
 
     models = {
         "LinearRegression": LinearRegression(),  # Baseline
@@ -174,24 +204,25 @@ def main():
 
     with open(output_path, "w") as file:
         for name, model in models.items():
-            pipeline = Pipeline(steps=[
-                ('preprocessing', preprocessing_pipeline),
-                ('regressor', model)
-            ])
+            #print(f"Training {name} model...")
 
-            pipeline.fit(train_features, train_labels)
-            train_preds = pipeline.predict(train_features)
-            test_preds = pipeline.predict(test_features)
+            # Train only the regressor, since train_features_transformed is already processed
+            model.fit(train_features_transformed, train_labels_cleaned)
 
-            mse_train = mean_squared_error(train_labels, train_preds)
+            # Predict on the transformed training and test sets
+            train_preds = model.predict(train_features_transformed)
+            test_preds = model.predict(test_features_transformed)
+
+            # Compute and print MSE
+            mse_train = mean_squared_error(train_labels_cleaned, train_preds)
             mse_test = mean_squared_error(test_labels, test_preds)
 
-            file.write(f"{name} MSE for Train Set: {mse_train}\n")
-            file.write(f"{name} MSE for Test Set: {mse_test}\n")
+            print(f"{name} Train MSE: {mse_train}")
+            print(f"{name} Test MSE: {mse_test}")
 
             if mse_test < best_mse:
                 best_mse = mse_test
-                best_model = pipeline
+                best_model = model
     
     ## Retrain data with the entire published dataset and the best model ##
     full_features, full_labels = extract_features(published_data, "Inhibition")
@@ -208,6 +239,7 @@ def main():
     joblib.dump(final_model, model_path)
     print("Final model trained on full dataset and saved.")
 
+# Function to test the trained model on unseen data
 # Function to test trained model on new molecules
 def test_on_unseen_data():
     model_path = "../output/modeling_pipeline.pkl"
@@ -218,28 +250,22 @@ def test_on_unseen_data():
     new_data = pd.read_csv(new_molecules_path)
     new_data.rename(columns={'id': 'CID'}, inplace=True)
 
-    # Apply the preprocessing pipeline to new data
     preprocessing_pipeline = model.named_steps['preprocessing']
     processed_features = preprocessing_pipeline.transform(new_data.drop(columns=['CID'], errors='ignore'))
 
-    # Identify which molecules are anomalies and store their CID a dataframe
     anomalies_df = detect_anomalies(processed_features, new_data['CID'].values)
 
-    # Predict on the new data using the trained pipeline
     predictions = model.predict(processed_features)
 
-    # Create a DataFrame with results
     results_df = pd.DataFrame({'CID': new_data['CID'], 'predicted_score': predictions})
-
-    # Mark anomalies with NaN to avoid type errors
+    
     results_df.loc[results_df['CID'].isin(anomalies_df['CID']), 'predicted_score'] = np.nan
 
-    # Sort with NaN last and save
     results_df.sort_values(by='predicted_score', ascending=False, na_position='last').to_csv(predictions_path, index=False)
 
-    print(f"Predictions saved to {predictions_path}, with anomalies marked as NaN.")
+    print(f"Predictions saved to {predictions_path}")
 
-# Function to find which features, if any, differ significantly among the top and bottom ranked molecules.
+
 def feature_difference(ranked_path, features_path, model_path, output_path):
     # Load ranked predictions
     ranked_predictions = pd.read_csv(ranked_path)
@@ -297,8 +323,8 @@ def feature_difference(ranked_path, features_path, model_path, output_path):
     print(f"Significant feature analysis complete. Results saved to '{output_path}/significant_features.csv'.")
 
 if __name__ == "__main__":
-    main() # Script to train the pipeline
-    test_on_unseen_data() # Script to make predictions using new data
+    main()
+    test_on_unseen_data()
 
     # Define file paths
     predictions_path = "../output/ranked_predictions.csv"
