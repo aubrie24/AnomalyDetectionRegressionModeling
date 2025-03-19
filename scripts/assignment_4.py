@@ -10,6 +10,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 import scipy.stats as stats
 
+#Authors: Aubrie Pressley & Lisette Kamper-Hinson
+#Acklowedgements: Chat GPT, Dr. Khuri's jupiter notebook for anomaly detection and reading on anomaly detection
+
 # Function to convert columns to numeric where possible
 # Used in pipeline preprocessing
 def convert_to_numeric(df):
@@ -96,25 +99,6 @@ def extract_features(data, label_col):
     features = data.drop([label_col, 'CID'], axis=1, errors='ignore')
     return features, labels
 
-# Function to detect anomalies and log them to a file
-def detect_and_log_anomalies(features, cids, output_path, contamination=0.05):
-    # Fit Isolation Forest
-    iforest = IsolationForest(contamination=contamination, random_state=42)
-    anomaly_predictions = iforest.fit(features).predict(features)  # Use .predict for binary classification
-    
-    # Identify anomalies (predictions of -1 indicate anomalies)
-    anomaly_mask = anomaly_predictions == -1
-    
-    # Create a DataFrame with CID and anomaly scores
-    anomaly_report = pd.DataFrame({
-        'CID': cids[anomaly_mask],
-        'Anomaly_Score': anomaly_predictions[anomaly_mask]  # Use predictions for clarity
-    }).sort_values(by='Anomaly_Score', ascending=True)
-    
-    # Save the report to a file
-    anomaly_report.to_csv(output_path, index=False)
-    print(f"Anomalies logged to {output_path}")
-
 # Function to detect anomalies and save them in a data frame
 def detect_anomalies(features, cids, contamination=0.05):
     # Fit Isolation Forest
@@ -125,7 +109,7 @@ def detect_anomalies(features, cids, contamination=0.05):
     anomaly_mask = anomaly_predictions == -1
 
     # Create a DataFrame with CID and anomaly status
-    anomaly_df = pd.DataFrame({'CID': cids[anomaly_mask]})
+    anomaly_df = pd.DataFrame({'id': cids[anomaly_mask]})
     
     return anomaly_df
 
@@ -150,23 +134,13 @@ def main():
     train_features, train_labels = extract_features(train_data, "Inhibition")
     test_features, test_labels = extract_features(test_data, "Inhibition")
 
-    # Preprocessing steps for reporting
+    # Preprocessing steps without anomaly detection
     preprocessing_pipeline = Pipeline(steps=[
         ('drop_problem_columns', FunctionTransformer(drop_problem_columns)),
         ('convert_numeric', FunctionTransformer(convert_to_numeric)),
         ('handle_missing', MissingValues()),
         ('cap_infinite', CapInfiniteValues()),
     ])
-
-    train_features_transformed_reporting = preprocessing_pipeline.fit_transform(train_features)
-    test_features_transformed_reporting = preprocessing_pipeline.transform(test_features)
-
-    # Detect and log anomalies in the training data
-    detect_and_log_anomalies(
-        train_features_transformed_reporting,
-        train_data['CID'].values,
-        anomaly_report_path
-    )
 
     # Preprocessing steps with anomaly detection
     preprocessing_pipeline_anomaly = Pipeline(steps=[
@@ -181,7 +155,6 @@ def main():
     train_features_transformed = preprocessing_pipeline_anomaly.fit_transform(train_features)
 
     print(f"Shape of train_features_transformed: {train_features_transformed.shape}")
-    
 
     # Access the anomaly_mask from the IsolationForestTransformer
     retained_indices = preprocessing_pipeline_anomaly.named_steps['anomaly_detection'].get_retained_indices()
@@ -217,8 +190,8 @@ def main():
             mse_train = mean_squared_error(train_labels_cleaned, train_preds)
             mse_test = mean_squared_error(test_labels, test_preds)
 
-            print(f"{name} Train MSE: {mse_train}")
-            print(f"{name} Test MSE: {mse_test}")
+            file.write(f"{name} Train MSE: {mse_train}\n")
+            file.write(f"{name} Test MSE: {mse_test}\n")
 
             if mse_test < best_mse:
                 best_mse = mse_test
@@ -248,22 +221,27 @@ def test_on_unseen_data():
 
     model = joblib.load(model_path)
     new_data = pd.read_csv(new_molecules_path)
-    new_data.rename(columns={'id': 'CID'}, inplace=True)
 
+    # Get the preprocessing pipeline
     preprocessing_pipeline = model.named_steps['preprocessing']
-    processed_features = preprocessing_pipeline.transform(new_data.drop(columns=['CID'], errors='ignore'))
+    processed_features = preprocessing_pipeline.transform(new_data.drop(columns=['id'], errors='ignore')) # Perform preprocessing on new data
 
-    anomalies_df = detect_anomalies(processed_features, new_data['CID'].values)
+    # Detect which values are anomalies, do not remove from data set
+    anomalies_df = detect_anomalies(processed_features, new_data['id'].values)
 
+    # Perform predictions on all values, even alomalies
     predictions = model.predict(processed_features)
 
-    results_df = pd.DataFrame({'CID': new_data['CID'], 'predicted_score': predictions})
+    #Create a data frame that includes the CID and predicted score
+    results_df = pd.DataFrame({'id': new_data['id'], 'predicted_score': predictions})
     
-    results_df.loc[results_df['CID'].isin(anomalies_df['CID']), 'predicted_score'] = np.nan
+    #Change any anomalies to NaN because their predictions are most likely inaccurate
+    results_df.loc[results_df['id'].isin(anomalies_df['id']), 'predicted_score'] = np.nan
 
+    # Sort the predictions, this will put anomalies at the bottom of the file
     results_df.sort_values(by='predicted_score', ascending=False, na_position='last').to_csv(predictions_path, index=False)
 
-    print(f"Predictions saved to {predictions_path}")
+    print(f"Predictions saved to {predictions_path}. Any molecules identified as anomalies will not have a prediction listed.")
 
 
 def feature_difference(ranked_path, features_path, model_path, output_path):
@@ -272,22 +250,21 @@ def feature_difference(ranked_path, features_path, model_path, output_path):
     
     # Load new molecule feature data
     features_df = pd.read_csv(features_path)
-    features_df.rename(columns={'id': 'CID'}, inplace=True)
 
     # Merge predictions with original feature data
-    merged_df = ranked_predictions.merge(features_df, on='CID')
+    merged_df = ranked_predictions.merge(features_df, on='id')
 
     # Load the trained model and extract the preprocessing pipeline
     model = joblib.load(model_path)
     preprocessing_pipeline = model.named_steps['preprocessing']
 
     # Extract features and apply full preprocessing
-    feature_data = merged_df.drop(columns=['CID', 'predicted_score'], errors='ignore')
+    feature_data = merged_df.drop(columns=['id', 'predicted_score'], errors='ignore')
     processed_features = preprocessing_pipeline.transform(feature_data)
 
     # Convert processed features back to a DataFrame
     processed_df = pd.DataFrame(processed_features, columns=feature_data.columns)
-    processed_df['CID'] = merged_df['CID'].values
+    processed_df['id'] = merged_df['id'].values
     processed_df['predicted_score'] = merged_df['predicted_score'].values
 
     # Exclude NaN predictions (anomalous molecules)
@@ -298,7 +275,7 @@ def feature_difference(ranked_path, features_path, model_path, output_path):
     bottom_molecules = processed_df.nsmallest(100, 'predicted_score')
 
     # Drop non-feature columns (CID, predicted_score)
-    feature_columns = [col for col in processed_df.columns if col not in ['CID', 'predicted_score']]
+    feature_columns = [col for col in processed_df.columns if col not in ['id', 'predicted_score']]
 
     # Store significant features
     significant_features = []
@@ -323,8 +300,8 @@ def feature_difference(ranked_path, features_path, model_path, output_path):
     print(f"Significant feature analysis complete. Results saved to '{output_path}/significant_features.csv'.")
 
 if __name__ == "__main__":
-    main()
-    test_on_unseen_data()
+    main() # Script to train pipeline
+    test_on_unseen_data() # Script to predict new data (new molecules)
 
     # Define file paths
     predictions_path = "../output/ranked_predictions.csv"

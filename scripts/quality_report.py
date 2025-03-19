@@ -4,8 +4,8 @@ from sklearn.preprocessing import OneHotEncoder
 
 #Authors: Aubrie Pressley & Lisette Kamper Hinson
 
-# function to convert columns to numeric where possible
-# this will have to be done before any modeling 
+# Function to convert columns to numeric where possible
+# This will have to be done before any modeling 
 def convert_to_numeric(df):
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -72,36 +72,43 @@ def data_leak(data, target_column="Inhibition", corr_limit=0.9, report_file=None
             except Exception as e:
                 f.write(f"\nError during OneHotEncoding: {e}\n")
 
+# Function to analyze the number of columns of dataset
 def data_shape(data, report_file):
     with open(report_file, "a") as f:
         f.write(f"\nNumber of columns: {data.shape[1]}\n")
         f.write(f"Number of rows: {data.shape[0]}\n")
 
+# Function to analyze if any rows are duplicated in dataset
 def duplicate_rows(data, report_file):
     with open(report_file, "a") as f:
         f.write(f"\nDuplicate rows: {len(data[data.duplicated()])}\n")
 
+# Function to analyze if any rows in the dataset has missing values
 def rows_missing(data, report_file):
     with open(report_file, "a") as f:
         f.write(f"\nNumber of rows with missing values: {len(data[data.isna().any(axis=1)])}\n")
 
+# Function to analyze which columns have missing values
 def col_missing(data, report_file):
     with open(report_file, "a") as f:
         missing_cols = data.columns[data.isna().any()].tolist()
         f.write(f"Columns that have missing values: {missing_cols}\n")
         f.write(f"Number of columns with missing values: {len(missing_cols)}\n")
 
+# Function to analyze how many missing values each column has
 def missing_values_per_column(data, report_file):
     with open(report_file, "a") as f:
         f.write("\nMissing values per column:\n")
         missing_counts = data.isnull().sum()
         f.write(f"{missing_counts.to_string()}\n")
 
+# Function to analyze the data type of each column
 def data_type(data, report_file):
     with open(report_file, "a") as f:
         f.write("\nData types of columns:\n")
         f.write(f"{data.dtypes.to_string()}\n")
 
+# Function to analyze the max and min value of any numeric columns
 def data_range(data, report_file):
     with open(report_file, "a") as f:
         numeric_data = data.select_dtypes(include=['number'])
@@ -109,6 +116,7 @@ def data_range(data, report_file):
             f.write(f"\nMax values of numeric columns:\n{numeric_data.max().to_string()}\n")
             f.write(f"\nMin values of numeric columns:\n{numeric_data.min().to_string()}\n")
 
+# Function to analyze the unique values of any categorical columns
 def unique_values(data, report_file):
     with open(report_file, "a") as f:
         cat_cols = data.select_dtypes(include=['object'])

@@ -1,6 +1,6 @@
-LinearRegression MSE for Train Set: 0.06549343603062965
-LinearRegression MSE for Test Set: 0.12878011114775093
-RandomForest MSE for Train Set: 0.013515319649446494
-RandomForest MSE for Test Set: 0.09636022518382352
-GradientBoosting MSE for Train Set: 0.025520735102361417
-GradientBoosting MSE for Test Set: 0.0959816015132677
+LinearRegression Train MSE: 0.05554789846292576
+LinearRegression Test MSE: 0.9811190805190527
+RandomForest Train MSE: 0.014012618102796677
+RandomForest Test MSE: 0.10528199040032679
+GradientBoosting Train MSE: 0.025637401988286162
+GradientBoosting Test MSE: 0.115677552748272
