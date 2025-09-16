@@ -19,6 +19,8 @@ Outputs:
 3) Ranked predictions (.csv)
 4) Significant features report (significant_features.csv)
 
+*DISCLAIMER* The data used for this project was made available through Wake Forest University and is not published in this repository. Therefore, the code and output is for refrence and cannot be run. 
+
 How to run regression.py
 1) Install dependencies 
   pip install pandas numpy scikit-learn scipy joblib
@@ -26,7 +28,8 @@ How to run regression.py
 
 How to run quality_report.py 
 1) Install dependencies
-   
+   pip install pandas scikit-learn
+2) python quality_report.py <>
 
 
 
