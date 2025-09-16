@@ -29,7 +29,7 @@ How to run regression.py
 How to run quality_report.py 
 1) Install dependencies
    pip install pandas scikit-learn
-2) python quality_report.py <>
+2) python quality_report.py <file_directory>
 
 
 
