@@ -19,7 +19,15 @@ Outputs:
 3) Ranked predictions (.csv)
 4) Significant features report (significant_features.csv)
 
-How to run: 
+How to run regression.py
+1) Install dependencies 
+  pip install pandas numpy scikit-learn scipy joblib
+2) python regression.py or python regression.py --test (for test trained model on new molecules)
+
+How to run quality_report.py 
+1) Install dependencies
+   
+
 
 
   
